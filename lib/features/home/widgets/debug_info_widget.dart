@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../services/permission_service.dart';
 import '../../../services/usage_stats_service.dart';
@@ -13,6 +14,7 @@ class _DebugInfoWidgetState extends State<DebugInfoWidget> {
   String _foregroundApp = 'Unknown';
   bool _isMonitoring = false;
   List<String> _lockedApps = [];
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -25,20 +27,34 @@ class _DebugInfoWidgetState extends State<DebugInfoWidget> {
     final permissions = await PermissionService.checkAllPermissions();
     final lockedApps = await UsageStatsService.getLockedApps();
     final foregroundApp = await UsageStatsService.getForegroundApp();
+    final isLocked = foregroundApp != null ? await UsageStatsService.isAppLocked(foregroundApp) : false;
     
     setState(() {
       _lockedApps = lockedApps;
       _foregroundApp = foregroundApp ?? 'Unknown';
+      _isMonitoring = UsageStatsService.onLockedAppDetected != null;
     });
+    
+    if (foregroundApp != null && isLocked) {
+      print('🔍 Debug: Foreground app $foregroundApp is in locked list');
+    }
   }
 
   void _startPeriodicCheck() {
-    Future.delayed(const Duration(seconds: 2), () {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       if (mounted) {
         _loadInfo();
-        _startPeriodicCheck();
+      } else {
+        timer.cancel();
       }
     });
+  }
+  
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -55,23 +71,62 @@ class _DebugInfoWidgetState extends State<DebugInfoWidget> {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text('Foreground App: $_foregroundApp'),
+            FutureBuilder<bool>(
+              future: _foregroundApp != 'Unknown' 
+                  ? UsageStatsService.isAppLocked(_foregroundApp)
+                  : Future.value(false),
+              builder: (context, snapshot) {
+                final isLocked = snapshot.data ?? false;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Foreground App: $_foregroundApp'),
+                    const SizedBox(height: 4),
+                    Text('Is Locked: ${isLocked ? "YES" : "NO"}'),
+                    const SizedBox(height: 4),
+                    Text('Monitoring: ${_isMonitoring ? "Active" : "Inactive"}'),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 4),
             Text('Locked Apps Count: ${_lockedApps.length}'),
             const SizedBox(height: 4),
-            Text('Locked Apps: ${_lockedApps.join(", ")}'),
+            Text('Locked Apps: ${_lockedApps.isEmpty ? "None" : _lockedApps.join(", ")}'),
             const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: () async {
-                final app = await UsageStatsService.getForegroundApp();
-                setState(() {
-                  _foregroundApp = app ?? 'Unknown';
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Foreground: $_foregroundApp')),
-                );
-              },
-              child: const Text('Check Foreground App'),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final app = await UsageStatsService.getForegroundApp();
+                      final isLocked = app != null ? await UsageStatsService.isAppLocked(app) : false;
+                      setState(() {
+                        _foregroundApp = app ?? 'Unknown';
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Foreground: $_foregroundApp\nLocked: $isLocked'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: const Text('Check App'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      UsageStatsService.startMonitoring();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Monitoring started')),
+                      );
+                    },
+                    child: const Text('Start Monitor'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

@@ -7,6 +7,7 @@ import '../../auth_pin/providers/pin_providers.dart';
 import '../../../services/providers.dart';
 import '../../../services/permission_service.dart';
 import '../../../services/usage_stats_service.dart';
+import '../../../services/overlay_service.dart';
 import '../../../widgets/permission_request_dialog.dart';
 import '../widgets/debug_info_widget.dart';
 import 'package:device_apps/device_apps.dart';
@@ -87,6 +88,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
       );
     }
+  }
+
+  void _setupMonitoringCallback() {
+    // Set up the callback for locked app detection
+    UsageStatsService.onLockedAppDetected = (packageName, appName) {
+      print('🔒 Locked app detected from home screen: $packageName');
+      
+      // Don't lock our own app
+      if (packageName == 'com.example.novaapplock') {
+        return;
+      }
+      
+      final lockState = ref.read(lockStateProvider);
+      if (lockState.isLockEnabled) {
+        print('🔒 Showing overlay for: $packageName');
+        OverlayService.showLockOverlay(
+          packageName: packageName,
+          appName: appName,
+          onUnlock: () {
+            print('🔓 Overlay unlocked');
+            OverlayService.hideLockOverlay();
+          },
+        );
+      }
+    };
   }
 
   Future<List<Application>> _getLockedAppsDetails(List<String> packageNames) async {
@@ -189,9 +215,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               
                               // Start monitoring when enabling
                               if (value) {
+                                // Ensure callback is set up
+                                _setupMonitoringCallback();
+                                
                                 final hasPermission = await PermissionService.isUsageStatsPermissionGranted();
                                 if (hasPermission) {
+                                  print('Starting monitoring from home screen toggle');
                                   UsageStatsService.startMonitoring();
+                                } else {
+                                  print('Usage stats permission not granted, cannot start monitoring');
                                 }
                                 
                                 if (mounted) {
@@ -201,6 +233,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 }
                               } else {
                                 // Stop monitoring when disabling
+                                print('Stopping monitoring - app lock disabled');
                                 UsageStatsService.stopMonitoring();
                               }
                             },

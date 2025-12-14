@@ -115,9 +115,11 @@ class MainActivity: FlutterActivity() {
         try {
             val usageStatsManager = applicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val time = System.currentTimeMillis()
+            
+            // Query usage stats for last 2 seconds (very recent)
             val stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_BEST,
-                time - 1000 * 60 * 10, // Last 10 minutes
+                time - 2000, // Last 2 seconds
                 time
             )
 
@@ -126,27 +128,33 @@ class MainActivity: FlutterActivity() {
                 var mostRecentTime: Long = 0
 
                 for (usageStats in stats) {
-                    if (usageStats.lastTimeUsed > mostRecentTime) {
+                    // Use lastTimeUsed for all versions
+                    val checkTime = usageStats.lastTimeUsed
+                    
+                    if (checkTime > mostRecentTime) {
                         mostRecent = usageStats
-                        mostRecentTime = usageStats.lastTimeUsed
+                        mostRecentTime = checkTime
                     }
                 }
 
                 return mostRecent?.packageName
             }
         } catch (e: Exception) {
-            // Handle error
+            android.util.Log.e("MainActivity", "Error getting foreground app: ${e.message}")
         }
 
-        // Fallback to ActivityManager for recent tasks
+        // Fallback to ActivityManager for recent tasks (deprecated but works on older versions)
         try {
             val activityManager = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val tasks = activityManager.getRunningTasks(1)
-            if (tasks.isNotEmpty()) {
-                return tasks[0].topActivity?.packageName
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) {
+                @Suppress("DEPRECATION")
+                val tasks = activityManager.getRunningTasks(1)
+                if (tasks.isNotEmpty() && tasks[0].topActivity != null) {
+                    return tasks[0].topActivity?.packageName
+                }
             }
         } catch (e: Exception) {
-            // Handle error
+            android.util.Log.e("MainActivity", "Error getting foreground app from ActivityManager: ${e.message}")
         }
 
         return null

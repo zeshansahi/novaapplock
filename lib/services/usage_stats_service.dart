@@ -87,9 +87,11 @@ class UsageStatsService {
   /// Start monitoring foreground app
   static void startMonitoring() {
     if (_monitoringTimer != null && _monitoringTimer!.isActive) {
+      print('⚠️ Monitoring already active, skipping');
       return;
     }
 
+    print('✅ Starting UsageStats monitoring...');
     _monitoringTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
       try {
         final foregroundApp = await getForegroundApp();
@@ -100,25 +102,30 @@ class UsageStatsService {
         }
         
         if (foregroundApp != _lastForegroundApp) {
-          print('Foreground app changed to: $foregroundApp');
+          print('📱 Foreground app changed: $_lastForegroundApp -> $foregroundApp');
           _lastForegroundApp = foregroundApp;
           
           final isLocked = await isAppLocked(foregroundApp);
-          print('Is $foregroundApp locked? $isLocked');
+          print('🔍 Checking if locked: $foregroundApp -> $isLocked');
           
-          if (isLocked && onLockedAppDetected != null) {
-            print('Locked app detected: $foregroundApp');
-            final appName = await getAppName(foregroundApp);
-            // Call the callback
-            onLockedAppDetected!(foregroundApp, appName);
+          if (isLocked) {
+            if (onLockedAppDetected != null) {
+              print('🚨 LOCKED APP DETECTED: $foregroundApp');
+              final appName = await getAppName(foregroundApp);
+              print('🚨 Calling callback with: $foregroundApp ($appName)');
+              // Call the callback
+              onLockedAppDetected!(foregroundApp, appName);
+            } else {
+              print('⚠️ Callback is null! Cannot trigger lock overlay');
+            }
           }
         }
       } catch (e) {
         // Log error for debugging
-        print('UsageStats monitoring error: $e');
+        print('❌ UsageStats monitoring error: $e');
       }
     });
-    print('UsageStats monitoring started');
+    print('✅ UsageStats monitoring started successfully');
   }
 
   /// Stop monitoring foreground app
