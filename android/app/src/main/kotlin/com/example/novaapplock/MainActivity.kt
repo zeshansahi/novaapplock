@@ -14,11 +14,14 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "com.example.novaapplock/usage_stats"
+    private val USAGE_STATS_CHANNEL = "com.example.novaapplock/usage_stats"
+    private val OVERLAY_CHANNEL = "com.example.novaapplock/overlay"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        
+        // Usage stats channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, USAGE_STATS_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "checkUsageStatsPermission" -> {
                     result.success(checkUsageStatsPermission())
@@ -41,6 +44,40 @@ class MainActivity: FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        
+        // Overlay channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OVERLAY_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "showOverlay" -> {
+                    val packageName = call.argument<String>("packageName") ?: ""
+                    val appName = call.argument<String>("appName") ?: "App"
+                    showOverlay(packageName, appName)
+                    result.success(null)
+                }
+                "hideOverlay" -> {
+                    hideOverlay()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+    
+    private fun showOverlay(packageName: String, appName: String) {
+        val intent = Intent(this, OverlayService::class.java).apply {
+            putExtra("packageName", packageName)
+            putExtra("appName", appName)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+    
+    private fun hideOverlay() {
+        val intent = Intent(this, OverlayService::class.java)
+        stopService(intent)
     }
 
     private fun checkUsageStatsPermission(): Boolean {

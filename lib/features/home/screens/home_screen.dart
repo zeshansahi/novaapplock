@@ -6,7 +6,9 @@ import '../providers/locked_apps_provider.dart';
 import '../../auth_pin/providers/pin_providers.dart';
 import '../../../services/providers.dart';
 import '../../../services/permission_service.dart';
+import '../../../services/usage_stats_service.dart';
 import '../../../widgets/permission_request_dialog.dart';
+import '../widgets/debug_info_widget.dart';
 import 'package:device_apps/device_apps.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -184,10 +186,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               }
                               
                               await lockNotifier.setLockEnabled(value);
-                              if (value && mounted) {
-                                // Lock immediately if enabling
-                                lockNotifier.lock();
-                                Navigator.of(context).pushReplacementNamed(AppConstants.lockRoute);
+                              
+                              // Start monitoring when enabling
+                              if (value) {
+                                final hasPermission = await PermissionService.isUsageStatsPermissionGranted();
+                                if (hasPermission) {
+                                  UsageStatsService.startMonitoring();
+                                }
+                                
+                                if (mounted) {
+                                  // Lock immediately if enabling
+                                  lockNotifier.lock();
+                                  Navigator.of(context).pushReplacementNamed(AppConstants.lockRoute);
+                                }
+                              } else {
+                                // Stop monitoring when disabling
+                                UsageStatsService.stopMonitoring();
                               }
                             },
                           ),
@@ -319,6 +333,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
+              const SizedBox(height: 16),
+              // Debug widget - remove in production
+              const DebugInfoWidget(),
             ],
           ),
         ),

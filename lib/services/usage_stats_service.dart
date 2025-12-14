@@ -90,23 +90,35 @@ class UsageStatsService {
       return;
     }
 
-    _monitoringTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+    _monitoringTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
       try {
         final foregroundApp = await getForegroundApp();
         
-        if (foregroundApp != null && foregroundApp != _lastForegroundApp) {
+        // Don't monitor our own app
+        if (foregroundApp == null || foregroundApp == 'com.example.novaapplock') {
+          return;
+        }
+        
+        if (foregroundApp != _lastForegroundApp) {
+          print('Foreground app changed to: $foregroundApp');
           _lastForegroundApp = foregroundApp;
           
           final isLocked = await isAppLocked(foregroundApp);
+          print('Is $foregroundApp locked? $isLocked');
+          
           if (isLocked && onLockedAppDetected != null) {
+            print('Locked app detected: $foregroundApp');
             final appName = await getAppName(foregroundApp);
+            // Call the callback
             onLockedAppDetected!(foregroundApp, appName);
           }
         }
       } catch (e) {
-        // Handle error silently
+        // Log error for debugging
+        print('UsageStats monitoring error: $e');
       }
     });
+    print('UsageStats monitoring started');
   }
 
   /// Stop monitoring foreground app
