@@ -153,16 +153,26 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
       // Lock the app when returning from background
       ref.read(lockStateProvider.notifier).lock();
       
-      // Navigate to lock screen if not already there
-      final navigator = Navigator.of(context);
-      if (navigator.canPop()) {
-        navigator.pushNamedAndRemoveUntil(
-          AppConstants.lockRoute,
-          (route) => route.settings.name == AppConstants.lockRoute,
-        );
-      } else {
-        navigator.pushReplacementNamed(AppConstants.lockRoute);
-      }
+      // Use a post-frame callback to ensure Navigator is available
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        
+        final navigator = Navigator.maybeOf(context);
+        if (navigator != null) {
+          // Check current route
+          final currentRoute = ModalRoute.of(context);
+          if (currentRoute?.settings.name != AppConstants.lockRoute) {
+            if (navigator.canPop()) {
+              navigator.pushNamedAndRemoveUntil(
+                AppConstants.lockRoute,
+                (route) => route.settings.name == AppConstants.lockRoute,
+              );
+            } else {
+              navigator.pushReplacementNamed(AppConstants.lockRoute);
+            }
+          }
+        }
+      });
     }
   }
 
