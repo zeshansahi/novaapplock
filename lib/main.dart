@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:overlay_support/overlay_support.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
 import 'features/splash/splash_screen.dart';
@@ -10,6 +11,9 @@ import 'features/home/screens/home_screen.dart';
 import 'features/installed_apps/screens/installed_apps_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'features/auth_pin/providers/lock_providers.dart';
+import 'services/providers.dart';
+import 'services/usage_stats_service.dart';
+import 'services/overlay_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,7 +57,37 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       _onAppResumed();
+      _initializeUsageStats();
+    } else if (state == AppLifecycleState.paused) {
+      _stopUsageStats();
     }
+  }
+
+  void _initializeUsageStats() {
+    // Set up callback for when locked app is detected
+    UsageStatsService.onLockedAppDetected = (packageName, appName) {
+      final lockState = ref.read(lockStateProvider);
+      if (lockState.isLockEnabled) {
+        OverlayService.showLockOverlay(
+          packageName: packageName,
+          appName: appName,
+          onUnlock: () {
+            // App unlocked
+          },
+        );
+      }
+    };
+    
+    // Check permission and start monitoring
+    UsageStatsService.isPermissionGranted().then((hasPermission) {
+      if (hasPermission) {
+        UsageStatsService.startMonitoring();
+      }
+    });
+  }
+
+  void _stopUsageStats() {
+    UsageStatsService.stopMonitoring();
   }
 
   void _onAppResumed() {
@@ -78,21 +112,23 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: AppConstants.appName,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
-      debugShowCheckedModeBanner: false,
-      initialRoute: AppConstants.splashRoute,
-      routes: {
-        AppConstants.splashRoute: (context) => const SplashScreen(),
-        AppConstants.pinSetupRoute: (context) => const PinSetupScreen(),
-        AppConstants.lockRoute: (context) => const LockScreen(),
-        AppConstants.homeRoute: (context) => const HomeScreen(),
-        AppConstants.installedAppsRoute: (context) => const InstalledAppsScreen(),
-        AppConstants.settingsRoute: (context) => const SettingsScreen(),
-      },
+    return OverlaySupport.global(
+      child: MaterialApp(
+        title: AppConstants.appName,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.system,
+        debugShowCheckedModeBanner: false,
+        initialRoute: AppConstants.splashRoute,
+        routes: {
+          AppConstants.splashRoute: (context) => const SplashScreen(),
+          AppConstants.pinSetupRoute: (context) => const PinSetupScreen(),
+          AppConstants.lockRoute: (context) => const LockScreen(),
+          AppConstants.homeRoute: (context) => const HomeScreen(),
+          AppConstants.installedAppsRoute: (context) => const InstalledAppsScreen(),
+          AppConstants.settingsRoute: (context) => const SettingsScreen(),
+        },
+      ),
     );
   }
 }

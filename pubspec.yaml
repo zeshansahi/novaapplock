@@ -44,6 +44,24 @@ dependencies:
   
   # Installed apps
   device_apps: ^2.2.0
+  
+  # Overlay support
+  overlay_support: ^2.1.0
+  
+  # Usage stats - Note: Requires platform channel implementation
+  # See README for implementation details
+  
+  # Biometric authentication
+  local_auth: ^2.3.0
+  
+  # In-app purchases
+  in_app_purchase: ^3.2.0
+  
+  # Image picker for intruder selfie
+  image_picker: ^1.1.2
+  
+  # Path provider for saving images
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:

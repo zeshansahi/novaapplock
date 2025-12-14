@@ -19,3 +19,5 @@ class AppConstants {
   static const String settingsRoute = '/settings';
 }
 
+
+

@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../auth_pin/providers/pin_providers.dart';
 import '../../auth_pin/widgets/pin_input_widget.dart';
+import '../../../services/providers.dart';
+import '../../../services/biometric_service.dart';
+import '../../../services/purchase_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -15,6 +18,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _isChangingPin = false;
   String? _errorMessage;
+  bool _biometricEnabled = false;
+  bool _isLoadingBiometric = false;
 
   Future<void> _changePin() async {
     setState(() {
@@ -146,6 +151,74 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadBiometricStatus();
+  }
+
+  Future<void> _loadBiometricStatus() async {
+    final biometricService = ref.read(biometricServiceProvider);
+    final enabled = await biometricService.isBiometricEnabled();
+    setState(() {
+      _biometricEnabled = enabled;
+    });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    setState(() {
+      _isLoadingBiometric = true;
+    });
+
+    final biometricService = ref.read(biometricServiceProvider);
+    
+    if (value) {
+      // Check if biometric is available
+      final isAvailable = await biometricService.isAvailable();
+      if (!isAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Biometric authentication is not available on this device'),
+            ),
+          );
+        }
+        setState(() {
+          _isLoadingBiometric = false;
+        });
+        return;
+      }
+    }
+
+    final success = await biometricService.setBiometricEnabled(value);
+    if (success) {
+      setState(() {
+        _biometricEnabled = value;
+      });
+    }
+
+    setState(() {
+      _isLoadingBiometric = false;
+    });
+  }
+
+  Future<void> _restorePurchases() async {
+    final purchaseService = ref.read(purchaseServiceProvider);
+    final success = await purchaseService.restorePurchases();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Purchases restored successfully'
+                : 'Failed to restore purchases. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -176,6 +249,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
             ),
+          const Divider(),
+          Consumer(
+            builder: (context, ref, child) {
+              return FutureBuilder<bool>(
+                future: ref.read(biometricServiceProvider).isAvailable(),
+                builder: (context, snapshot) {
+                  final isAvailable = snapshot.data ?? false;
+                  
+                  if (!isAvailable) {
+                    return const SizedBox.shrink();
+                  }
+                  
+                  return ListTile(
+                    leading: const Icon(Icons.fingerprint),
+                    title: const Text('Biometric Authentication'),
+                    subtitle: const Text('Use fingerprint or face unlock'),
+                    trailing: _isLoadingBiometric
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Switch(
+                            value: _biometricEnabled,
+                            onChanged: _toggleBiometric,
+                          ),
+                  );
+                },
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.restore),
+            title: const Text('Restore Purchases'),
+            subtitle: const Text('Restore your premium subscription'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _restorePurchases,
+          ),
           const Divider(),
           ListTile(
             leading: Icon(

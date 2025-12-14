@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:device_apps/device_apps.dart';
 import '../providers/installed_apps_providers.dart';
 import '../widgets/app_details_bottom_sheet.dart';
+import '../../home/providers/locked_apps_provider.dart';
+import '../../../services/providers.dart';
+import '../../../services/purchase_service.dart';
+import '../../../services/usage_stats_service.dart';
 
 class InstalledAppsScreen extends ConsumerStatefulWidget {
   const InstalledAppsScreen({super.key});
@@ -14,6 +18,46 @@ class InstalledAppsScreen extends ConsumerStatefulWidget {
 class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  Future<bool> _canLockApp(WidgetRef ref, String packageName) async {
+    final purchaseService = ref.read(purchaseServiceProvider);
+    final lockedAppsState = ref.read(lockedAppsProvider);
+    final isPremium = await purchaseService.isPremium();
+    
+    if (isPremium) return true;
+    
+    final limit = await purchaseService.getLockedAppsLimit();
+    final currentCount = lockedAppsState.lockedApps.length;
+    final isAlreadyLocked = lockedAppsState.lockedApps.contains(packageName);
+    
+    return isAlreadyLocked || currentCount < limit;
+  }
+
+  void _showPremiumDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Upgrade to Premium'),
+        content: const Text(
+          'Free version allows locking up to 3 apps. Upgrade to Premium for unlimited app locking and additional features.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Navigate to premium screen
+              // TODO: Implement premium screen navigation
+            },
+            child: const Text('Upgrade'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -93,9 +137,35 @@ class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      trailing: Switch(
-                        value: false,
-                        onChanged: null,
+                      trailing: Consumer(
+                        builder: (context, ref, child) {
+                          final lockedAppsState = ref.watch(lockedAppsProvider);
+                          final isLocked = lockedAppsState.lockedApps.contains(app.packageName);
+                          
+                          return FutureBuilder<bool>(
+                            future: _canLockApp(ref, app.packageName),
+                            builder: (context, snapshot) {
+                              final canLock = snapshot.data ?? true;
+                              
+                              return Switch(
+                                value: isLocked,
+                                onChanged: canLock
+                                    ? (value) async {
+                                        final notifier = ref.read(lockedAppsProvider.notifier);
+                                        if (value) {
+                                          final success = await notifier.addLockedApp(app.packageName);
+                                          if (!success && mounted) {
+                                            _showPremiumDialog(context, ref);
+                                          }
+                                        } else {
+                                          await notifier.removeLockedApp(app.packageName);
+                                        }
+                                      }
+                                    : null,
+                              );
+                            },
+                          );
+                        },
                       ),
                       onTap: () {
                         showModalBottomSheet(
