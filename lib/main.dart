@@ -10,6 +10,7 @@ import 'features/auth_pin/screens/lock_screen.dart';
 import 'features/home/screens/home_screen.dart';
 import 'features/installed_apps/screens/installed_apps_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
+import 'features/premium/screens/premium_screen.dart';
 import 'features/auth_pin/providers/lock_providers.dart';
 import 'services/providers.dart';
 import 'services/usage_stats_service.dart';
@@ -127,6 +128,7 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
           AppConstants.homeRoute: (context) => const HomeScreen(),
           AppConstants.installedAppsRoute: (context) => const InstalledAppsScreen(),
           AppConstants.settingsRoute: (context) => const SettingsScreen(),
+          AppConstants.premiumRoute: (context) => const PremiumScreen(),
         },
       ),
     );

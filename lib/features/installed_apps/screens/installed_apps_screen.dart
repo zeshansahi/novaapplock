@@ -4,6 +4,7 @@ import 'package:device_apps/device_apps.dart';
 import '../providers/installed_apps_providers.dart';
 import '../widgets/app_details_bottom_sheet.dart';
 import '../../home/providers/locked_apps_provider.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../services/providers.dart';
 import '../../../services/purchase_service.dart';
 import '../../../services/usage_stats_service.dart';
@@ -46,14 +47,13 @@ class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // Navigate to premium screen
-              // TODO: Implement premium screen navigation
-            },
-            child: const Text('Upgrade'),
-          ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).pushNamed(AppConstants.premiumRoute);
+                    },
+                    child: const Text('Upgrade'),
+                  ),
         ],
       ),
     );

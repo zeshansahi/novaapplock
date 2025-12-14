@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'permission_service.dart';
 
 class UsageStatsService {
   static const String _lockedAppsKey = 'locked_apps_list';
@@ -11,21 +12,12 @@ class UsageStatsService {
 
   /// Check if usage stats permission is granted
   static Future<bool> isPermissionGranted() async {
-    try {
-      final result = await _channel.invokeMethod<bool>('checkUsageStatsPermission');
-      return result ?? false;
-    } catch (e) {
-      return false;
-    }
+    return await PermissionService.isUsageStatsPermissionGranted();
   }
 
   /// Request usage stats permission
   static Future<void> requestPermission() async {
-    try {
-      await _channel.invokeMethod('requestUsageStatsPermission');
-    } catch (e) {
-      // Handle error
-    }
+    await PermissionService.requestUsageStatsPermission();
   }
 
   /// Get the current foreground app

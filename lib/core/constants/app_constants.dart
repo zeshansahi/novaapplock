@@ -17,6 +17,7 @@ class AppConstants {
   static const String homeRoute = '/home';
   static const String installedAppsRoute = '/installed-apps';
   static const String settingsRoute = '/settings';
+  static const String premiumRoute = '/premium';
 }
 
 

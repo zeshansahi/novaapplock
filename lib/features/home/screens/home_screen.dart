@@ -5,6 +5,8 @@ import '../providers/lock_providers.dart';
 import '../providers/locked_apps_provider.dart';
 import '../../auth_pin/providers/pin_providers.dart';
 import '../../../services/providers.dart';
+import '../../../services/permission_service.dart';
+import '../../../widgets/permission_request_dialog.dart';
 import 'package:device_apps/device_apps.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -20,7 +22,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLockState();
+      // Delay permission check to ensure layout is complete
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _checkPermissions();
+        }
+      });
     });
+  }
+
+  Future<void> _checkPermissions() async {
+    if (!mounted) return;
+    
+    // Wait for the widget tree to be fully built
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+    
+    final permissions = await PermissionService.checkAllPermissions();
+    
+    // Only show overlay permission dialog if not granted
+    if (!permissions['overlay']! && mounted) {
+      PermissionRequestDialog.show(
+        context: context,
+        permissionType: 'overlay',
+        title: 'Overlay Permission Required',
+        message: 'Nova App Lock needs permission to display over other apps to show the lock screen when a locked app is opened.',
+        onGranted: () {
+          // After overlay permission, check usage stats
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) {
+              _checkUsageStatsPermission();
+            }
+          });
+        },
+        onDenied: () {
+          // Even if denied, check usage stats
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) {
+              _checkUsageStatsPermission();
+            }
+          });
+        },
+      );
+    } else {
+      // If overlay is granted, check usage stats
+      _checkUsageStatsPermission();
+    }
+  }
+
+  Future<void> _checkUsageStatsPermission() async {
+    if (!mounted) return;
+    
+    final permissions = await PermissionService.checkAllPermissions();
+    if (!permissions['usageStats']! && mounted) {
+      PermissionRequestDialog.show(
+        context: context,
+        permissionType: 'usageStats',
+        title: 'Usage Access Permission Required',
+        message: 'Nova App Lock needs usage access permission to detect when locked apps are opened.',
+        onGranted: () {
+          // Permission granted
+        },
+      );
+    }
   }
 
   Future<List<Application>> _getLockedAppsDetails(List<String> packageNames) async {
@@ -102,6 +166,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Switch(
                             value: lockState.isLockEnabled,
                             onChanged: (value) async {
+                              if (value) {
+                                // Check permissions before enabling
+                                final permissions = await PermissionService.checkAllPermissions();
+                                if (!permissions['overlay']! || !permissions['usageStats']!) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please grant all required permissions to enable app locking'),
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                    await _checkPermissions();
+                                  }
+                                  return;
+                                }
+                              }
+                              
                               await lockNotifier.setLockEnabled(value);
                               if (value && mounted) {
                                 // Lock immediately if enabling
@@ -130,12 +211,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             'Locked Apps',
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).pushNamed(AppConstants.installedAppsRoute);
-                            },
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Apps'),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              TextButton.icon(
+                                onPressed: () {
+                                  if (mounted) {
+                                    Navigator.of(context).pushNamed(AppConstants.installedAppsRoute);
+                                  }
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Add Apps'),
+                              ),
+                              TextButton.icon(
+                                onPressed: () {
+                                  if (mounted) {
+                                    Navigator.of(context).pushNamed(AppConstants.premiumRoute);
+                                  }
+                                },
+                                icon: const Icon(Icons.star),
+                                label: const Text('Premium'),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -190,7 +287,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                             width: 40,
                                             height: 40,
                                           )
-                                        : const Icon(Icons.android),
+                                        : const Icon(Icons.android, size: 40),
                                     title: Text(app.appName),
                                     subtitle: Text(app.packageName),
                                     trailing: Switch(
