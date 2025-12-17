@@ -11,8 +11,9 @@ class UsageStatsService {
   static String? _lastLockedAppTriggered; // Track last locked app we triggered overlay for
   static String? _lastUnlockedPackage;
   static DateTime? _lastUnlockTime;
-  static const Duration _unlockCooldown = Duration(seconds: 10);
+  static const Duration _unlockCooldown = Duration(minutes: 5);
   static bool _overlayActive = false;
+  static String? _currentUnlockedForeground;
   static Function(String packageName, String appName)? onLockedAppDetected;
 
   /// Check if usage stats permission is granted
@@ -137,6 +138,7 @@ class UsageStatsService {
     _lastUnlockTime = DateTime.now();
     _lastLockedAppTriggered = null; // Clear trigger so app can be used freely
     _overlayActive = false;
+    _currentUnlockedForeground = packageName;
     
     // Notify native side to set cooldown in MonitoringService
     const overlayChannel = MethodChannel('com.example.novaapplock/overlay');
@@ -198,17 +200,14 @@ class UsageStatsService {
           return;
         }
 
-        // If this app was just unlocked, skip re-locking during cooldown window
-        if (_lastUnlockedPackage != null && _lastUnlockTime != null) {
-          final now = DateTime.now();
-          final elapsed = now.difference(_lastUnlockTime!);
-          if (elapsed < _unlockCooldown) {
-            if (foregroundApp == _lastUnlockedPackage) {
-              print('⏸️ Skipping lock for recently unlocked app: $foregroundApp (${_unlockCooldown - elapsed} left)');
-              return;
-            }
+        // If this app was just unlocked, skip re-locking while it stays in foreground.
+        if (_currentUnlockedForeground != null) {
+          if (foregroundApp == _currentUnlockedForeground) {
+            print('⏸️ Skipping lock for recently unlocked app still in foreground: $foregroundApp');
+            return;
           } else {
-            // Cooldown expired
+            // Foreground changed, clear unlock flag
+            _currentUnlockedForeground = null;
             _lastUnlockedPackage = null;
             _lastUnlockTime = null;
           }

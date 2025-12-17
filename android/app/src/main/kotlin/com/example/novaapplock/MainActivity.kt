@@ -194,6 +194,8 @@ class MainActivity: FlutterActivity() {
             val intent = Intent(this, MonitoringService::class.java).apply {
                 action = MonitoringService.ACTION_MARK_UNLOCKED
                 putExtra(MonitoringService.EXTRA_PACKAGE_NAME, packageName)
+                // Also track current unlocked foreground
+                putExtra("current_unlocked_foreground", packageName)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 startForegroundService(intent)
