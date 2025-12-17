@@ -157,39 +157,17 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
           final lockState = ref.read(lock.lockStateProvider);
           if (lockState.isLockEnabled || !lockState.isLoading) {
             _showingPendingLock = true;
-            // DON'T call lock() here - that's for internal app lock only
-            // External app locks use overlay without affecting internal state
-            
-            // Wait for navigator to be ready
-            await Future.delayed(const Duration(milliseconds: 200));
-            
-            if (mounted && _navKey.currentState != null) {
-              _navKey.currentState!.push(
-                MaterialPageRoute(
-                  builder: (context) => LockOverlayScreen(
-                    packageName: packageName,
-                    appName: appName,
-                    onUnlock: () {
-                      // SystemNavigator.pop() minimizes app to reveal locked app
-                      // SystemNavigator.pop() minimizes app to reveal locked app
-                      SystemNavigator.pop();
-                      _showingPendingLock = false;
-                    },
-                  ),
-                  fullscreenDialog: true,
-                ),
-              );
-            } else {
-              // Fallback to overlay
-              OverlayService.showLockOverlay(
-                packageName: packageName,
-                appName: appName,
-                onUnlock: () {
-                  OverlayService.hideLockOverlay();
-                  _showingPendingLock = false;
-                },
-              );
-            }
+            // Use overlay flow only (avoid pushing a new page to prevent double screens)
+            UsageStatsService.setOverlayActive(true);
+            OverlayService.showLockOverlay(
+              packageName: packageName,
+              appName: appName,
+              onUnlock: () {
+                OverlayService.hideLockOverlay();
+                UsageStatsService.setOverlayActive(false);
+                _showingPendingLock = false;
+              },
+            );
           }
         }
       }

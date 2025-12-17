@@ -97,18 +97,27 @@ class _LockOverlayScreenState extends ConsumerState<LockOverlayScreen> {
     UsageStatsService.markUnlocked(widget.packageName);
     // Launch the originally locked app after successful unlock
     if (widget.packageName.isNotEmpty) {
-      // Prefer native launch via platform channel for reliability
-      const MethodChannel('com.example.novaapplock/overlay')
-          .invokeMethod<bool>('openApp', {'packageName': widget.packageName}).catchError((_) {});
-      // Fallback to device_apps
-      DeviceApps.openApp(widget.packageName);
+      Future.microtask(() async {
+        bool launched = false;
+        // Prefer native launch via platform channel for reliability
+        try {
+          launched = await const MethodChannel('com.example.novaapplock/overlay')
+                  .invokeMethod<bool>('openApp', {'packageName': widget.packageName}) ??
+              false;
+        } catch (_) {}
 
-      // Small delay then push Nova to background to avoid black screen
-      Future.delayed(const Duration(milliseconds: 200), () {
-        const MethodChannel('com.example.novaapplock/overlay')
-            .invokeMethod<bool>('moveToBackground')
-            .catchError((_) {});
-        Navigator.of(context, rootNavigator: true).maybePop();
+        // Fallback to device_apps if native launch fails
+        if (!launched) {
+          launched = await DeviceApps.openApp(widget.packageName);
+        }
+
+        // Small delay then push Nova to background to avoid black screen
+        Future.delayed(const Duration(milliseconds: 200), () {
+          const MethodChannel('com.example.novaapplock/overlay')
+              .invokeMethod<bool>('moveToBackground')
+              .catchError((_) {});
+          Navigator.of(context, rootNavigator: true).maybePop();
+        });
       });
     }
     widget.onUnlock();
