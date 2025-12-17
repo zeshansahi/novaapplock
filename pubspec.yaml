@@ -66,6 +66,10 @@ dependencies:
   # Permission handler for runtime permissions
   permission_handler: ^11.3.1
 
+dependency_overrides:
+  device_apps:
+    path: packages/device_apps
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

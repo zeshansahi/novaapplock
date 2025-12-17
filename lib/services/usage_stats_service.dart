@@ -8,6 +8,11 @@ class UsageStatsService {
   static const MethodChannel _channel = MethodChannel('com.example.novaapplock/usage_stats');
   static Timer? _monitoringTimer;
   static String? _lastForegroundApp;
+  static String? _lastLockedAppTriggered; // Track last locked app we triggered overlay for
+  static String? _lastUnlockedPackage;
+  static DateTime? _lastUnlockTime;
+  static const Duration _unlockCooldown = Duration(seconds: 10);
+  static bool _overlayActive = false;
   static Function(String packageName, String appName)? onLockedAppDetected;
 
   /// Check if usage stats permission is granted
@@ -45,8 +50,15 @@ class UsageStatsService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lockedAppsJson = prefs.getStringList(_lockedAppsKey) ?? [];
-      return lockedAppsJson;
+      // Trim and filter out any empty strings
+      final cleanedList = lockedAppsJson
+          .map((app) => app.trim())
+          .where((app) => app.isNotEmpty)
+          .toList();
+      print('🔐 getLockedApps: Retrieved ${cleanedList.length} apps: ${cleanedList.join(", ")}');
+      return cleanedList;
     } catch (e) {
+      print('❌ Error getting locked apps: $e');
       return [];
     }
   }
@@ -54,14 +66,24 @@ class UsageStatsService {
   /// Add app to locked list
   static Future<bool> addLockedApp(String packageName) async {
     try {
+      final trimmedPackageName = packageName.trim();
       final lockedApps = await getLockedApps();
-      if (!lockedApps.contains(packageName)) {
-        lockedApps.add(packageName);
+      
+      // Check if already exists (case-insensitive and trimmed)
+      final alreadyExists = lockedApps.any((app) => app.trim().toLowerCase() == trimmedPackageName.toLowerCase());
+      
+      if (!alreadyExists) {
+        lockedApps.add(trimmedPackageName);
         final prefs = await SharedPreferences.getInstance();
-        return await prefs.setStringList(_lockedAppsKey, lockedApps);
+        final success = await prefs.setStringList(_lockedAppsKey, lockedApps);
+        print('🔐 addLockedApp: Added $trimmedPackageName, success: $success');
+        return success;
+      } else {
+        print('🔐 addLockedApp: $trimmedPackageName already exists');
+        return true;
       }
-      return true;
     } catch (e) {
+      print('❌ Error adding locked app: $e');
       return false;
     }
   }
@@ -69,19 +91,67 @@ class UsageStatsService {
   /// Remove app from locked list
   static Future<bool> removeLockedApp(String packageName) async {
     try {
+      final trimmedPackageName = packageName.trim();
       final lockedApps = await getLockedApps();
-      lockedApps.remove(packageName);
+      
+      // Remove using case-insensitive comparison
+      lockedApps.removeWhere((app) => app.trim().toLowerCase() == trimmedPackageName.toLowerCase());
+      
       final prefs = await SharedPreferences.getInstance();
-      return await prefs.setStringList(_lockedAppsKey, lockedApps);
+      final success = await prefs.setStringList(_lockedAppsKey, lockedApps);
+      print('🔐 removeLockedApp: Removed $trimmedPackageName, success: $success');
+      return success;
     } catch (e) {
+      print('❌ Error removing locked app: $e');
       return false;
     }
   }
 
   /// Check if app is locked
   static Future<bool> isAppLocked(String packageName) async {
-    final lockedApps = await getLockedApps();
-    return lockedApps.contains(packageName);
+    try {
+      final trimmedPackageName = packageName.trim();
+      final lockedApps = await getLockedApps();
+      
+      // Use case-insensitive comparison with trimming
+      final isLocked = lockedApps.any((app) => app.trim().toLowerCase() == trimmedPackageName.toLowerCase());
+      
+      print('🔐 isAppLocked check: "$trimmedPackageName" -> $isLocked (locked apps: ${lockedApps.length})');
+      if (lockedApps.isNotEmpty) {
+        print('🔐 Locked apps list: ${lockedApps.join(", ")}');
+        // Debug: Show exact comparison
+        for (var app in lockedApps) {
+          final matches = app.trim().toLowerCase() == trimmedPackageName.toLowerCase();
+          print('🔐   Comparing: "$app" == "$trimmedPackageName" -> $matches');
+        }
+      }
+      return isLocked;
+    } catch (e) {
+      print('❌ Error checking if app is locked: $e');
+      return false;
+    }
+  }
+
+  static void markUnlocked(String packageName) {
+    _lastUnlockedPackage = packageName;
+    _lastUnlockTime = DateTime.now();
+    _lastLockedAppTriggered = null; // Clear trigger so app can be used freely
+    _overlayActive = false;
+    
+    // Notify native side to set cooldown in MonitoringService
+    const overlayChannel = MethodChannel('com.example.novaapplock/overlay');
+    overlayChannel.invokeMethod('markUnlocked', {'packageName': packageName}).catchError((e) {
+      print('Error marking unlocked on native side: $e');
+    });
+    
+    print('🔓 Marked $packageName as unlocked');
+  }
+
+  static void setOverlayActive(bool active) {
+    _overlayActive = active;
+    if (!active) {
+      _lastLockedAppTriggered = null;
+    }
   }
 
   /// Start monitoring foreground app
@@ -92,33 +162,98 @@ class UsageStatsService {
     }
 
     print('✅ Starting UsageStats monitoring...');
-    _monitoringTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+    // Keep process alive with native foreground service
+    _channel.invokeMethod('startMonitoringService').catchError((e) {
+      print('❌ Error starting monitoring service: $e');
+    });
+    _lastForegroundApp = null; // Reset to ensure first check triggers
+    
+    _monitoringTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) async {
       try {
         final foregroundApp = await getForegroundApp();
         
-        // Don't monitor our own app
-        if (foregroundApp == null || foregroundApp == 'com.example.novaapplock') {
+        // Don't monitor our own app or null
+        if (foregroundApp == null) {
+          _lastForegroundApp = null;
+          _lastLockedAppTriggered = null;
           return;
         }
         
-        if (foregroundApp != _lastForegroundApp) {
+        if (foregroundApp == 'com.example.novaapplock') {
+          _lastForegroundApp = null;
+          _lastLockedAppTriggered = null;
+          return;
+        }
+        
+        // Check if app changed
+        final appChanged = foregroundApp != _lastForegroundApp;
+        
+        if (appChanged) {
           print('📱 Foreground app changed: $_lastForegroundApp -> $foregroundApp');
           _lastForegroundApp = foregroundApp;
+        }
+
+        // If overlay already showing, skip
+        if (_overlayActive) {
+          return;
+        }
+
+        // If this app was just unlocked, skip re-locking during cooldown window
+        if (_lastUnlockedPackage != null && _lastUnlockTime != null) {
+          final now = DateTime.now();
+          final elapsed = now.difference(_lastUnlockTime!);
+          if (elapsed < _unlockCooldown) {
+            if (foregroundApp == _lastUnlockedPackage) {
+              print('⏸️ Skipping lock for recently unlocked app: $foregroundApp (${_unlockCooldown - elapsed} left)');
+              return;
+            }
+          } else {
+            // Cooldown expired
+            _lastUnlockedPackage = null;
+            _lastUnlockTime = null;
+          }
+        }
+        
+        // Always check if current app is locked (not just on change)
+        // This ensures we catch locked apps even if detection was missed
+        final isLocked = await isAppLocked(foregroundApp);
+        print('🔍 Checking app: $foregroundApp -> Locked: $isLocked');
+        
+        if (isLocked) {
+          // Only trigger if app changed OR if we haven't triggered for this app yet
+          // This prevents repeated triggers but allows re-trigger if user switches away
+          final shouldTrigger = appChanged || _lastLockedAppTriggered != foregroundApp;
           
-          final isLocked = await isAppLocked(foregroundApp);
-          print('🔍 Checking if locked: $foregroundApp -> $isLocked');
-          
-          if (isLocked) {
+          if (shouldTrigger) {
+            print('🔍 Locked app detected: $foregroundApp (changed: $appChanged)');
+            print('🔍 Callback status: ${onLockedAppDetected != null ? "SET" : "NULL"}');
+            
             if (onLockedAppDetected != null) {
-              print('🚨 LOCKED APP DETECTED: $foregroundApp');
               final appName = await getAppName(foregroundApp);
-              print('🚨 Calling callback with: $foregroundApp ($appName)');
-              // Call the callback
-              onLockedAppDetected!(foregroundApp, appName);
+              print('🚨 LOCKED APP DETECTED: $foregroundApp ($appName)');
+              print('🚨 Calling callback immediately...');
+              
+              // Mark that we've triggered for this app
+              _lastLockedAppTriggered = foregroundApp;
+              
+              // Call the callback immediately when locked app is detected
+              try {
+                onLockedAppDetected!(foregroundApp, appName);
+                print('✅ Callback executed successfully');
+              } catch (e, stackTrace) {
+                print('❌ Error in callback: $e');
+                print('❌ Stack trace: $stackTrace');
+                // Reset trigger flag on error so we can retry
+                _lastLockedAppTriggered = null;
+              }
             } else {
               print('⚠️ Callback is null! Cannot trigger lock overlay');
+              print('⚠️ Make sure monitoring callback is set in main.dart or home_screen.dart');
             }
           }
+        } else {
+          // Current app isn't locked, so reset trigger state
+          _lastLockedAppTriggered = null;
         }
       } catch (e) {
         // Log error for debugging
@@ -133,5 +268,9 @@ class UsageStatsService {
     _monitoringTimer?.cancel();
     _monitoringTimer = null;
     _lastForegroundApp = null;
+    _lastLockedAppTriggered = null;
+    _channel.invokeMethod('stopMonitoringService').catchError((e) {
+      print('❌ Error stopping monitoring service: $e');
+    });
   }
 }

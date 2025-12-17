@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_constants.dart';
 import '../providers/lock_providers.dart';
@@ -23,8 +24,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Set up monitoring callback immediately
+    _setupMonitoringCallback();
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLockState();
+      // Start monitoring if lock is already enabled
+      _startMonitoringIfEnabled();
       // Delay permission check to ensure layout is complete
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
@@ -32,6 +38,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       });
     });
+  }
+
+  Future<void> _startMonitoringIfEnabled() async {
+    final lockState = ref.read(lockStateProvider);
+    if (lockState.isLockEnabled) {
+      final hasPermission = await PermissionService.isUsageStatsPermissionGranted();
+      if (hasPermission) {
+        print('🔄 Starting monitoring (lock already enabled)');
+        UsageStatsService.startMonitoring();
+      } else {
+        print('⚠️ Cannot start monitoring - usage stats permission not granted');
+      }
+    }
   }
 
   Future<void> _checkPermissions() async {
@@ -84,10 +103,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: 'Usage Access Permission Required',
         message: 'Nova App Lock needs usage access permission to detect when locked apps are opened.',
         onGranted: () {
-          // Permission granted
+          // After usage stats, show auto start dialog
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) _showAutoStartDialog();
+          });
+        },
+        onDenied: () {
+          // Even if denied, show auto start dialog
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) _showAutoStartDialog();
+          });
         },
       );
+    } else {
+      // If usage stats already granted, show auto start dialog
+      _showAutoStartDialog();
     }
+  }
+  
+  Future<void> _showAutoStartDialog() async {
+    if (!mounted) return;
+    
+    // Show dialog for auto start
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Background Running Required'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'For app lock to work when the app is closed, please enable:',
+            ),
+            SizedBox(height: 12),
+            Text('• Auto Start permission'),
+            Text('• Disable Battery Optimization'),
+            SizedBox(height: 12),
+            Text(
+              'This ensures the app stays active in background to protect your locked apps.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Later'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              try {
+                const channel = MethodChannel('com.example.novaapplock/overlay');
+                await channel.invokeMethod('openAutoStartSettings');
+              } catch (e) {
+                debugPrint('Error opening auto-start settings: $e');
+              }
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _setupMonitoringCallback() {
@@ -103,6 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final lockState = ref.read(lockStateProvider);
       if (lockState.isLockEnabled) {
         print('🔒 Showing overlay for: $packageName');
+        // DON'T call lock() here - avoids triggering internal app lock
         OverlayService.showLockOverlay(
           packageName: packageName,
           appName: appName,
@@ -125,13 +204,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final lockState = ref.read(lockStateProvider);
     final pinNotifier = ref.read(pinStateProvider.notifier);
     
+    // Don't navigate to internal lock screen if overlay is already showing
+    // This prevents conflict when lock_overlay_screen is displayed for locked apps
+    if (OverlayService.isOverlayShowing) {
+      print('⚠️ Overlay is showing, skipping internal lock navigation');
+      return;
+    }
+    
     // Check if lock is enabled and we need to show lock screen
     if (lockState.isLockEnabled && lockState.isLocked) {
       pinNotifier.hasPin().then((hasPin) {
         if (hasPin) {
-          final navigator = Navigator.of(context);
-          if (mounted) {
-            navigator.pushReplacementNamed(AppConstants.lockRoute);
+          // Double-check overlay isn't showing now
+          if (!OverlayService.isOverlayShowing) {
+            final navigator = Navigator.of(context);
+            if (mounted) {
+              navigator.pushReplacementNamed(AppConstants.lockRoute);
+            }
           }
         }
       });
@@ -252,34 +341,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Locked Apps',
-                            style: Theme.of(context).textTheme.titleMedium,
+                          Expanded(
+                            child: Text(
+                              'Locked Apps',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
                           ),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              TextButton.icon(
-                                onPressed: () {
-                                  if (mounted) {
-                                    Navigator.of(context).pushNamed(AppConstants.installedAppsRoute);
-                                  }
-                                },
-                                icon: const Icon(Icons.add),
-                                label: const Text('Add Apps'),
-                              ),
-                              TextButton.icon(
-                                onPressed: () {
-                                  if (mounted) {
-                                    Navigator.of(context).pushNamed(AppConstants.premiumRoute);
-                                  }
-                                },
-                                icon: const Icon(Icons.star),
-                                label: const Text('Premium'),
-                              ),
-                            ],
+                          Flexible(
+                            child: Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () {
+                                    if (mounted) {
+                                      Navigator.of(context).pushNamed(AppConstants.installedAppsRoute);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add Apps'),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () {
+                                    if (mounted) {
+                                      Navigator.of(context).pushNamed(AppConstants.premiumRoute);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.star),
+                                  label: const Text('Premium'),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -376,4 +471,3 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
-

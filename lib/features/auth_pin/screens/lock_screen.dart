@@ -5,6 +5,7 @@ import '../../../core/constants/app_constants.dart';
 import '../providers/pin_providers.dart';
 import '../providers/lock_providers.dart';
 import '../widgets/pin_input_widget.dart';
+import '../../../services/overlay_service.dart';
 
 class LockScreen extends ConsumerStatefulWidget {
   const LockScreen({super.key});
@@ -31,7 +32,13 @@ class _LockScreenState extends ConsumerState<LockScreen> {
         _errorMessage = null;
       });
       ref.read(lockStateProvider.notifier).unlock();
-      Navigator.of(context).pushReplacementNamed(AppConstants.homeRoute);
+      OverlayService.hideLockOverlay();
+      final nav = Navigator.of(context);
+      if (nav.canPop()) {
+        nav.pop();
+      } else {
+        nav.pushReplacementNamed(AppConstants.homeRoute);
+      }
     } else {
       setState(() {
         _errorMessage = 'Incorrect PIN. Please try again.';

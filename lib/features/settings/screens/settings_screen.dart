@@ -20,6 +20,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String? _errorMessage;
   bool _biometricEnabled = false;
   bool _isLoadingBiometric = false;
+  bool _openingAutoStart = false;
 
   Future<void> _changePin() async {
     setState(() {
@@ -201,6 +202,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
   }
 
+  Future<void> _openAutoStartSettings() async {
+    setState(() {
+      _openingAutoStart = true;
+    });
+    bool opened = false;
+    try {
+      const channel = MethodChannel('com.example.novaapplock/overlay');
+      final result = await channel.invokeMethod<bool>('openAutoStartSettings');
+      opened = result ?? false;
+    } catch (e) {
+      debugPrint('Error opening auto-start settings: $e');
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            opened
+                ? 'Opening auto-start settings. Enable Nova App Lock to run in background.'
+                : 'Could not open auto-start settings. Please enable auto-start manually in your phone settings.',
+          ),
+        ),
+      );
+    }
+    if (mounted) {
+      setState(() {
+        _openingAutoStart = false;
+      });
+    }
+  }
+
   Future<void> _restorePurchases() async {
     final purchaseService = ref.read(purchaseServiceProvider);
     final success = await purchaseService.restorePurchases();
@@ -282,6 +313,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const Divider(),
           ListTile(
+            leading: const Icon(Icons.play_arrow_outlined),
+            title: const Text('Enable Auto-start'),
+            subtitle: const Text('Required on Xiaomi/Oppo/Vivo etc. so monitoring keeps running'),
+            trailing: _openingAutoStart
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: _openingAutoStart ? null : _openAutoStartSettings,
+          ),
+          const Divider(),
+          ListTile(
             leading: const Icon(Icons.restore),
             title: const Text('Restore Purchases'),
             subtitle: const Text('Restore your premium subscription'),
@@ -308,4 +353,3 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 }
-

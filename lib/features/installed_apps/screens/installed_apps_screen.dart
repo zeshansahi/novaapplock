@@ -4,10 +4,12 @@ import 'package:device_apps/device_apps.dart';
 import '../providers/installed_apps_providers.dart';
 import '../widgets/app_details_bottom_sheet.dart';
 import '../../home/providers/locked_apps_provider.dart';
+import '../../auth_pin/providers/lock_providers.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../services/providers.dart';
 import '../../../services/purchase_service.dart';
 import '../../../services/usage_stats_service.dart';
+import '../../../services/permission_service.dart';
 
 class InstalledAppsScreen extends ConsumerStatefulWidget {
   const InstalledAppsScreen({super.key});
@@ -19,6 +21,7 @@ class InstalledAppsScreen extends ConsumerStatefulWidget {
 class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _enablingLock = false;
 
   Future<bool> _canLockApp(WidgetRef ref, String packageName) async {
     final purchaseService = ref.read(purchaseServiceProvider);
@@ -57,6 +60,51 @@ class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _ensureAppLockEnabled(BuildContext context, WidgetRef ref) async {
+    if (_enablingLock) return;
+    final lockState = ref.read(lockStateProvider);
+    if (lockState.isLockEnabled) return;
+    
+    setState(() {
+      _enablingLock = true;
+    });
+    
+    try {
+      final permissions = await PermissionService.requestAllPermissions();
+      final hasOverlay = permissions['overlay'] ?? false;
+      final hasUsage = permissions['usageStats'] ?? false;
+      
+      if (!hasOverlay || !hasUsage) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Grant overlay & usage access to enable app locking.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      await ref.read(lockStateProvider.notifier).setLockEnabled(true);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('App Lock enabled automatically for locked apps.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _enablingLock = false;
+        });
+      }
+    }
   }
 
   @override
@@ -156,6 +204,8 @@ class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
                                           final success = await notifier.addLockedApp(app.packageName);
                                           if (!success && mounted) {
                                             _showPremiumDialog(context, ref);
+                                          } else if (success && mounted) {
+                                            await _ensureAppLockEnabled(context, ref);
                                           }
                                         } else {
                                           await notifier.removeLockedApp(app.packageName);
@@ -215,4 +265,3 @@ class _InstalledAppsScreenState extends ConsumerState<InstalledAppsScreen> {
     );
   }
 }
-

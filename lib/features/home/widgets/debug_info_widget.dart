@@ -24,10 +24,14 @@ class _DebugInfoWidgetState extends State<DebugInfoWidget> {
   }
 
   Future<void> _loadInfo() async {
+    if (!mounted) return; // Check if widget is still mounted
+    
     final permissions = await PermissionService.checkAllPermissions();
     final lockedApps = await UsageStatsService.getLockedApps();
     final foregroundApp = await UsageStatsService.getForegroundApp();
     final isLocked = foregroundApp != null ? await UsageStatsService.isAppLocked(foregroundApp) : false;
+    
+    if (!mounted) return; // Check again after async operations
     
     setState(() {
       _lockedApps = lockedApps;
@@ -43,11 +47,11 @@ class _DebugInfoWidgetState extends State<DebugInfoWidget> {
   void _startPeriodicCheck() {
     _refreshTimer?.cancel();
     _refreshTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      if (mounted) {
-        _loadInfo();
-      } else {
+      if (!mounted) {
         timer.cancel();
+        return;
       }
+      _loadInfo();
     });
   }
   
@@ -99,17 +103,20 @@ class _DebugInfoWidgetState extends State<DebugInfoWidget> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () async {
+                      if (!mounted) return;
                       final app = await UsageStatsService.getForegroundApp();
                       final isLocked = app != null ? await UsageStatsService.isAppLocked(app) : false;
-                      setState(() {
-                        _foregroundApp = app ?? 'Unknown';
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Foreground: $_foregroundApp\nLocked: $isLocked'),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
+                      if (mounted) {
+                        setState(() {
+                          _foregroundApp = app ?? 'Unknown';
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Foreground: $_foregroundApp\nLocked: $isLocked'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
                     },
                     child: const Text('Check App'),
                   ),

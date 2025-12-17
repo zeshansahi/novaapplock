@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:device_apps/device_apps.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../services/usage_stats_service.dart';
 import '../providers/pin_providers.dart';
 import '../providers/lock_providers.dart';
 import '../../../services/biometric_service.dart';
@@ -92,6 +94,23 @@ class _LockOverlayScreenState extends ConsumerState<LockOverlayScreen> {
 
   void _unlock() {
     ref.read(lockStateProvider.notifier).unlock();
+    UsageStatsService.markUnlocked(widget.packageName);
+    // Launch the originally locked app after successful unlock
+    if (widget.packageName.isNotEmpty) {
+      // Prefer native launch via platform channel for reliability
+      const MethodChannel('com.example.novaapplock/overlay')
+          .invokeMethod<bool>('openApp', {'packageName': widget.packageName}).catchError((_) {});
+      // Fallback to device_apps
+      DeviceApps.openApp(widget.packageName);
+
+      // Small delay then push Nova to background to avoid black screen
+      Future.delayed(const Duration(milliseconds: 200), () {
+        const MethodChannel('com.example.novaapplock/overlay')
+            .invokeMethod<bool>('moveToBackground')
+            .catchError((_) {});
+        Navigator.of(context, rootNavigator: true).maybePop();
+      });
+    }
     widget.onUnlock();
   }
 
@@ -244,4 +263,3 @@ class FakeCrashScreen extends StatelessWidget {
     );
   }
 }
-

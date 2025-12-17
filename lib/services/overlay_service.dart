@@ -2,6 +2,7 @@ import 'package:overlay_support/overlay_support.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../features/auth_pin/screens/lock_overlay_screen.dart';
+import 'usage_stats_service.dart';
 
 class OverlayService {
   static const MethodChannel _channel = MethodChannel('com.example.novaapplock/overlay');
@@ -16,44 +17,48 @@ class OverlayService {
     required VoidCallback onUnlock,
   }) {
     if (_isOverlayShowing) {
-      print('Overlay already showing, skipping');
+      print('⚠️ Overlay already showing, skipping');
       return;
     }
 
-    print('Showing lock overlay for: $packageName ($appName)');
+    print('🔒 Showing lock overlay for: $packageName ($appName)');
     _isOverlayShowing = true;
     _currentOnUnlock = onUnlock;
+    UsageStatsService.setOverlayActive(true);
     
-    // Try native overlay first (works over other apps)
-    _showNativeOverlay(packageName, appName).catchError((e) {
-      print('Native overlay failed: $e, trying Flutter overlay');
-      // Fallback to Flutter overlay (only works in our app)
+    // Bring our app to foreground, then show Flutter overlay with PIN
+    _bringAppToFront().then((_) {
+      // Add a small delay to ensure app is in foreground
+      return Future.delayed(const Duration(milliseconds: 200));
+    }).then((_) {
       _showFlutterOverlay(packageName, appName, onUnlock);
-    });
-  }
-
-  static Future<void> _showNativeOverlay(String packageName, String appName) async {
-    try {
-      await _channel.invokeMethod('showOverlay', {
-        'packageName': packageName,
-        'appName': appName,
+    }).catchError((error) {
+      print('❌ Error in showLockOverlay: $error');
+      _isOverlayShowing = false;
+      _currentOnUnlock = null;
+      // Retry once after delay
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!_isOverlayShowing) {
+          print('🔄 Retrying lock overlay...');
+          _isOverlayShowing = true;
+          _currentOnUnlock = onUnlock;
+          _showFlutterOverlay(packageName, appName, onUnlock);
+        }
       });
-      print('Native overlay shown successfully');
-    } catch (e) {
-      print('Error showing native overlay: $e');
-      rethrow;
-    }
+    });
   }
 
   static void _showFlutterOverlay(String packageName, String appName, VoidCallback onUnlock) {
     try {
+      print('📱 Creating Flutter overlay widget...');
       _currentOverlay = showOverlay(
         (context, t) => LockOverlayScreen(
           packageName: packageName,
           appName: appName,
           onUnlock: () {
-            print('Overlay unlocked for: $packageName');
+            print('✅ Overlay unlocked for: $packageName');
             _isOverlayShowing = false;
+            UsageStatsService.setOverlayActive(false);
             onUnlock();
             _currentOverlay?.dismiss();
             _currentOverlay = null;
@@ -62,11 +67,13 @@ class OverlayService {
         ),
         duration: Duration.zero, // Show until dismissed
       );
-      print('Flutter overlay shown successfully');
-    } catch (e) {
-      print('Error showing Flutter overlay: $e');
+      print('✅ Flutter overlay shown successfully');
+    } catch (e, stackTrace) {
+      print('❌ Error showing Flutter overlay: $e');
+      print('Stack trace: $stackTrace');
       _isOverlayShowing = false;
       _currentOnUnlock = null;
+      _currentOverlay = null;
     }
   }
 
@@ -80,20 +87,42 @@ class OverlayService {
 
   /// Hide the lock screen overlay
   static void hideLockOverlay() {
-    if (!_isOverlayShowing) return;
+    if (!_isOverlayShowing) {
+      print('ℹ️ No overlay to hide');
+      return;
+    }
+    
+    print('🔓 Hiding lock overlay');
     _isOverlayShowing = false;
+    UsageStatsService.setOverlayActive(false);
     
     // Hide native overlay
-    _channel.invokeMethod('hideOverlay').catchError((e) {
-      print('Error hiding native overlay: $e');
-    });
+    try {
+      _channel.invokeMethod('hideOverlay').catchError((e) {
+        print('⚠️ Error hiding native overlay: $e');
+      });
+    } catch (e) {
+      print('⚠️ Exception hiding native overlay: $e');
+    }
     
     // Hide Flutter overlay
-    _currentOverlay?.dismiss();
-    _currentOverlay = null;
-    _currentOnUnlock = null;
+    try {
+      _currentOverlay?.dismiss();
+      _currentOverlay = null;
+      _currentOnUnlock = null;
+    } catch (e) {
+      print('⚠️ Error dismissing Flutter overlay: $e');
+    }
   }
 
   static bool get isOverlayShowing => _isOverlayShowing;
-}
 
+  static Future<void> _bringAppToFront() async {
+    try {
+      await _channel.invokeMethod('bringToFront');
+      print('Requested bringToFront via platform channel');
+    } catch (e) {
+      print('Error bringing app to front: $e');
+    }
+  }
+}
