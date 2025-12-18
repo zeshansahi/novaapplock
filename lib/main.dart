@@ -14,6 +14,7 @@ import 'features/installed_apps/screens/installed_apps_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'features/premium/screens/premium_screen.dart';
 import 'features/auth_pin/providers/lock_providers.dart' as lock;
+import 'features/auth_pin/providers/pin_providers.dart';
 import 'services/providers.dart';
 import 'services/usage_stats_service.dart';
 import 'services/overlay_service.dart';
@@ -46,6 +47,7 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
   final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
   bool _pendingLockChecked = false;
   bool _showingPendingLock = false;
+  bool _isLockScreenShowing = false;
 
   @override
   void initState() {
@@ -70,6 +72,11 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
           _startMonitoringIfPermitted();
         } else if (wasEnabled && !isEnabled) {
           UsageStatsService.stopMonitoring();
+          UsageStatsService.setOverlayActive(false);
+          OverlayService.hideLockOverlay();
+          const MethodChannel('com.example.novaapplock/overlay')
+              .invokeMethod('clearPendingLock')
+              .catchError((_) {});
         }
       },
     );
@@ -100,6 +107,7 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
     if (state == AppLifecycleState.resumed) {
       _startMonitoringIfPermitted();
       _checkPendingLockViaChannel();
+      _lockOnResume();
     }
   }
 
@@ -155,7 +163,7 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
           print('🔒 Pending lock found via channel: $packageName');
           
           final lockState = ref.read(lock.lockStateProvider);
-          if (lockState.isLockEnabled || !lockState.isLoading) {
+          if (lockState.isLockEnabled) {
             _showingPendingLock = true;
             // Use overlay flow only (avoid pushing a new page to prevent double screens)
             UsageStatsService.setOverlayActive(true);
@@ -174,6 +182,29 @@ class _NovaAppLockAppState extends ConsumerState<NovaAppLockApp>
     } catch (e) {
       print('Error checking pending lock via channel: $e');
     }
+  }
+
+  Future<void> _lockOnResume() async {
+    if (_showingPendingLock || OverlayService.isOverlayShowing || _isLockScreenShowing) {
+      return;
+    }
+
+    final lockState = ref.read(lock.lockStateProvider);
+    if (!lockState.isLockEnabled) return;
+
+    final pinNotifier = ref.read(pinStateProvider.notifier);
+    final hasPin = await pinNotifier.hasPin();
+    if (!mounted || !hasPin) return;
+
+    ref.read(lock.lockStateProvider.notifier).lock();
+
+    final navigator = _navKey.currentState;
+    if (navigator == null) return;
+
+    _isLockScreenShowing = true;
+    navigator.pushNamed(AppConstants.lockRoute).whenComplete(() {
+      _isLockScreenShowing = false;
+    });
   }
 
   @override

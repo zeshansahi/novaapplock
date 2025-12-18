@@ -21,7 +21,9 @@ class MainActivity: FlutterActivity() {
     companion object {
         @JvmStatic var pendingLockPackage: String? = null
         @JvmStatic var pendingLockAppName: String? = null
+        @JvmStatic var pendingLockTimestamp: Long? = null
     }
+    private val PENDING_LOCK_TTL_MS = 15000L
     private var flutterEngine: FlutterEngine? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -49,9 +51,23 @@ class MainActivity: FlutterActivity() {
                     putBoolean("flutter.show_lock_overlay_pending", true)
                     putString("flutter.locked_package_name", packageName)
                     putString("flutter.locked_app_name", appName)
+                    putLong("flutter.locked_timestamp", System.currentTimeMillis())
                     apply()
                 }
                 android.util.Log.d("MainActivity", "Stored lock overlay info in SharedPreferences")
+            }
+        } else {
+            // User opened the app normally; clear any stale pending lock.
+            pendingLockPackage = null
+            pendingLockAppName = null
+            pendingLockTimestamp = null
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                remove("flutter.show_lock_overlay_pending")
+                remove("flutter.locked_package_name")
+                remove("flutter.locked_app_name")
+                remove("flutter.locked_timestamp")
+                apply()
             }
         }
     }
@@ -139,31 +155,51 @@ class MainActivity: FlutterActivity() {
                         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
                         val fromStaticPackage = pendingLockPackage
                         val fromStaticApp = pendingLockAppName
+                        val fromStaticTimestamp = pendingLockTimestamp ?: 0L
                         val hasPrefPending = prefs.getBoolean("flutter.show_lock_overlay_pending", false)
                         val prefPackage = prefs.getString("flutter.locked_package_name", null)
                         val prefApp = prefs.getString("flutter.locked_app_name", null)
+                        val prefTimestamp = prefs.getLong("flutter.locked_timestamp", 0L)
 
-                        val packageName = when {
-                            !fromStaticPackage.isNullOrEmpty() -> fromStaticPackage
-                            hasPrefPending && !prefPackage.isNullOrEmpty() -> prefPackage
-                            else -> null
-                        }
-                        val appName = when {
-                            !fromStaticApp.isNullOrEmpty() -> fromStaticApp
-                            hasPrefPending -> prefApp ?: "App"
-                            else -> null
+                        val packageName: String?
+                        val appName: String?
+                        val timestamp: Long
+
+                        if (!fromStaticPackage.isNullOrEmpty()) {
+                            packageName = fromStaticPackage
+                            appName = fromStaticApp ?: "App"
+                            timestamp = fromStaticTimestamp
+                        } else if (hasPrefPending && !prefPackage.isNullOrEmpty()) {
+                            packageName = prefPackage
+                            appName = prefApp ?: "App"
+                            timestamp = prefTimestamp
+                        } else {
+                            packageName = null
+                            appName = null
+                            timestamp = 0L
                         }
 
                         if (packageName != null) {
+                            val now = System.currentTimeMillis()
+                            val isFresh = timestamp > 0L && now - timestamp <= PENDING_LOCK_TTL_MS
+
                             pendingLockPackage = null
                             pendingLockAppName = null
+                            pendingLockTimestamp = null
                             prefs.edit().apply {
                                 remove("flutter.show_lock_overlay_pending")
                                 remove("flutter.locked_package_name")
                                 remove("flutter.locked_app_name")
+                                remove("flutter.locked_timestamp")
                                 apply()
                             }
-                            result.success(mapOf("packageName" to packageName, "appName" to (appName ?: "App")))
+
+                            if (isFresh) {
+                                result.success(mapOf("packageName" to packageName, "appName" to (appName ?: "App")))
+                            } else {
+                                android.util.Log.w("MainActivity", "Discarded stale pending lock for $packageName")
+                                result.success(null)
+                            }
                         } else {
                             result.success(null)
                         }
@@ -172,9 +208,28 @@ class MainActivity: FlutterActivity() {
                         result.error("pending_lock_error", e.message, null)
                     }
                 }
+                "clearPendingLock" -> {
+                    clearPendingLock()
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun clearPendingLock() {
+        pendingLockPackage = null
+        pendingLockAppName = null
+        pendingLockTimestamp = null
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            remove("flutter.show_lock_overlay_pending")
+            remove("flutter.locked_package_name")
+            remove("flutter.locked_app_name")
+            remove("flutter.locked_timestamp")
+            apply()
+        }
+        android.util.Log.d("MainActivity", "Cleared pending lock state")
     }
     
     private fun showOverlay(packageName: String, appName: String) {

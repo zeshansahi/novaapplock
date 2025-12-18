@@ -40,11 +40,13 @@ class OverlayService : Service() {
             // Persist pending lock info so Flutter can render the overlay once the app comes to foreground
             MainActivity.pendingLockPackage = packageName
             MainActivity.pendingLockAppName = appName
+            MainActivity.pendingLockTimestamp = System.currentTimeMillis()
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             prefs.edit().apply {
                 putBoolean("flutter.show_lock_overlay_pending", true)
                 putString("flutter.locked_package_name", packageName)
                 putString("flutter.locked_app_name", appName)
+                putLong("flutter.locked_timestamp", System.currentTimeMillis())
                 apply()
             }
 
