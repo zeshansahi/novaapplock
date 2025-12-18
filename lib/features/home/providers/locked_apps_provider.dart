@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/providers.dart';
 import '../../../services/usage_stats_service.dart';
 import '../../../services/purchase_service.dart';
+import '../../../services/overlay_service.dart';
 
 final lockedAppsProvider = StateNotifierProvider<LockedAppsNotifier, LockedAppsState>((ref) {
   return LockedAppsNotifier(
@@ -78,6 +79,9 @@ class LockedAppsNotifier extends StateNotifier<LockedAppsState> {
     try {
       final success = await UsageStatsService.removeLockedApp(packageName);
       if (success) {
+        OverlayService.hideIfShowingFor(packageName);
+        UsageStatsService.clearLockStateForPackage(packageName);
+        await UsageStatsService.clearPendingLockForPackage(packageName);
         await _loadLockedApps();
       }
       return success;
@@ -95,4 +99,3 @@ class LockedAppsNotifier extends StateNotifier<LockedAppsState> {
     await _loadLockedApps();
   }
 }
-

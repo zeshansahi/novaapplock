@@ -93,7 +93,7 @@ class UsageStatsService {
   static Future<bool> removeLockedApp(String packageName) async {
     try {
       final trimmedPackageName = packageName.trim();
-      final lockedApps = await getLockedApps();
+      final lockedApps = await getLockedApps()??[];
       
       // Remove using case-insensitive comparison
       lockedApps.removeWhere((app) => app.trim().toLowerCase() == trimmedPackageName.toLowerCase());
@@ -153,6 +153,31 @@ class UsageStatsService {
     _overlayActive = active;
     if (!active) {
       _lastLockedAppTriggered = null;
+    }
+  }
+
+  static void clearLockStateForPackage(String packageName) {
+    if (_lastLockedAppTriggered == packageName) {
+      _lastLockedAppTriggered = null;
+    }
+    if (_currentUnlockedForeground == packageName) {
+      _currentUnlockedForeground = null;
+    }
+    if (_lastUnlockedPackage == packageName) {
+      _lastUnlockedPackage = null;
+      _lastUnlockTime = null;
+    }
+  }
+
+  static Future<void> clearPendingLockForPackage(String packageName) async {
+    if (packageName.isEmpty) return;
+    const overlayChannel = MethodChannel('com.example.novaapplock/overlay');
+    try {
+      await overlayChannel.invokeMethod('clearPendingLockForPackage', {
+        'packageName': packageName,
+      });
+    } catch (e) {
+      print('Error clearing pending lock for $packageName: $e');
     }
   }
 

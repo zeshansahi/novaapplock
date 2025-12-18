@@ -9,6 +9,7 @@ class OverlayService {
   static bool _isOverlayShowing = false;
   static OverlaySupportEntry? _currentOverlay;
   static VoidCallback? _currentOnUnlock;
+  static String? _currentPackage;
 
   /// Show the lock screen overlay
   static void showLockOverlay({
@@ -24,6 +25,7 @@ class OverlayService {
     print('🔒 Showing lock overlay for: $packageName ($appName)');
     _isOverlayShowing = true;
     _currentOnUnlock = onUnlock;
+    _currentPackage = packageName;
     UsageStatsService.setOverlayActive(true);
     
     // Bring our app to foreground, then show Flutter overlay with PIN
@@ -58,6 +60,7 @@ class OverlayService {
           onUnlock: () {
             print('✅ Overlay unlocked for: $packageName');
             _isOverlayShowing = false;
+            _currentPackage = null;
             UsageStatsService.setOverlayActive(false);
             onUnlock();
             _currentOverlay?.dismiss();
@@ -74,6 +77,7 @@ class OverlayService {
       _isOverlayShowing = false;
       _currentOnUnlock = null;
       _currentOverlay = null;
+      _currentPackage = null;
     }
   }
 
@@ -95,6 +99,7 @@ class OverlayService {
     print('🔓 Hiding lock overlay');
     _isOverlayShowing = false;
     UsageStatsService.setOverlayActive(false);
+    _currentPackage = null;
     
     // Hide native overlay
     try {
@@ -110,12 +115,19 @@ class OverlayService {
       _currentOverlay?.dismiss();
       _currentOverlay = null;
       _currentOnUnlock = null;
+      _currentPackage = null;
     } catch (e) {
       print('⚠️ Error dismissing Flutter overlay: $e');
     }
   }
 
   static bool get isOverlayShowing => _isOverlayShowing;
+
+  static void hideIfShowingFor(String packageName) {
+    if (_currentPackage == packageName) {
+      hideLockOverlay();
+    }
+  }
 
   static Future<void> _bringAppToFront() async {
     try {

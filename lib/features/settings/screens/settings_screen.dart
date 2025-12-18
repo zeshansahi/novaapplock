@@ -232,6 +232,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _showAutoStartDialog() async {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Enable Auto-Start'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'For reliable app lock after swipe/kills, please enable:',
+            ),
+            SizedBox(height: 12),
+            Text('• Auto Start permission'),
+            Text('• Disable Battery Optimization'),
+            SizedBox(height: 12),
+            Text(
+              'We cannot enable this automatically due to Android restrictions.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            onPressed: _openingAutoStart
+                ? null
+                : () {
+                    Navigator.pop(dialogContext);
+                    _openAutoStartSettings();
+                  },
+            child: const Text('Enable Auto-Start'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _restorePurchases() async {
     final purchaseService = ref.read(purchaseServiceProvider);
     final success = await purchaseService.restorePurchases();
@@ -323,7 +365,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.chevron_right),
-            onTap: _openingAutoStart ? null : _openAutoStartSettings,
+            onTap: _openingAutoStart ? null : _showAutoStartDialog,
           ),
           const Divider(),
           ListTile(

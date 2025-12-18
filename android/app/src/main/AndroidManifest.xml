@@ -13,8 +13,6 @@
     <!-- Usage stats permission to detect foreground app -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Accessibility service for persistent lock detection -->
-    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" tools:ignore="ExportedService" />
     
     <!-- Biometric permission -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />

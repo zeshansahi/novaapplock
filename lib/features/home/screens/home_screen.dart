@@ -128,20 +128,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Background Running Required'),
+        title: const Text('Enable Auto-Start'),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'For app lock to work when the app is closed, please enable:',
+              'For reliable app lock after swipe/kills, please enable:',
             ),
             SizedBox(height: 12),
             Text('• Auto Start permission'),
             Text('• Disable Battery Optimization'),
             SizedBox(height: 12),
             Text(
-              'This ensures the app stays active in background to protect your locked apps.',
+              'We cannot enable this automatically due to Android restrictions.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],
@@ -149,7 +149,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Later'),
+            child: const Text('Not now'),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -161,7 +161,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 debugPrint('Error opening auto-start settings: $e');
               }
             },
-            child: const Text('Open Settings'),
+            child: const Text('Enable Auto-Start'),
           ),
         ],
       ),

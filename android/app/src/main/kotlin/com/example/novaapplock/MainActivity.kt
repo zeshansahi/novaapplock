@@ -212,6 +212,15 @@ class MainActivity: FlutterActivity() {
                     clearPendingLock()
                     result.success(null)
                 }
+                "clearPendingLockForPackage" -> {
+                    val targetPackage = call.argument<String>("packageName") ?: ""
+                    if (targetPackage.isEmpty()) {
+                        result.success(false)
+                    } else {
+                        val cleared = clearPendingLockForPackage(targetPackage)
+                        result.success(cleared)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -230,6 +239,19 @@ class MainActivity: FlutterActivity() {
             apply()
         }
         android.util.Log.d("MainActivity", "Cleared pending lock state")
+    }
+
+    private fun clearPendingLockForPackage(packageName: String): Boolean {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val prefPackage = prefs.getString("flutter.locked_package_name", null)
+        val shouldClear = (pendingLockPackage != null && pendingLockPackage == packageName) ||
+                (prefPackage != null && prefPackage == packageName)
+
+        if (shouldClear) {
+            clearPendingLock()
+        }
+
+        return shouldClear
     }
     
     private fun showOverlay(packageName: String, appName: String) {
@@ -303,6 +325,8 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun startMonitoringService() {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("flutter.monitoring_enabled", true).apply()
         val intent = Intent(this, MonitoringService::class.java)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             startForegroundService(intent)
@@ -313,6 +337,8 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun stopMonitoringService() {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("flutter.monitoring_enabled", false).apply()
         val intent = Intent(this, MonitoringService::class.java)
         stopService(intent)
         android.util.Log.d("MainActivity", "MonitoringService stop requested")

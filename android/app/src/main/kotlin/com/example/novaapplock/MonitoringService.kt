@@ -72,36 +72,43 @@ class MonitoringService : Service() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         stopForeground(true)
-        // Try to restart if system kills service
-        try {
-            val restartIntent = Intent(applicationContext, MonitoringService::class.java).apply {
-                setPackage(packageName)
+        if (shouldRestart()) {
+            try {
+                val restartIntent = Intent(applicationContext, MonitoringService::class.java).apply {
+                    setPackage(packageName)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(restartIntent)
+                } else {
+                    startService(restartIntent)
+                }
+                Log.d("MonitoringService", "Service restart requested in onDestroy")
+            } catch (e: Exception) {
+                Log.e("MonitoringService", "Failed to restart service onDestroy: ${e.message}", e)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(restartIntent)
-            } else {
-                startService(restartIntent)
-            }
-            Log.d("MonitoringService", "Service restart requested in onDestroy")
-        } catch (e: Exception) {
-            Log.e("MonitoringService", "Failed to restart service onDestroy: ${e.message}", e)
+        } else {
+            Log.d("MonitoringService", "Service restart skipped (monitoring disabled)")
         }
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Attempt to restart the service if the task is removed (e.g., swiped from recents)
-        try {
-            val restartIntent = Intent(applicationContext, MonitoringService::class.java)
-            restartIntent.setPackage(packageName)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(restartIntent)
-            } else {
-                startService(restartIntent)
+        if (shouldRestart()) {
+            try {
+                val restartIntent = Intent(applicationContext, MonitoringService::class.java)
+                restartIntent.setPackage(packageName)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(restartIntent)
+                } else {
+                    startService(restartIntent)
+                }
+                Log.d("MonitoringService", "Service restarted after task removed")
+            } catch (e: Exception) {
+                Log.e("MonitoringService", "Failed to restart service on task removed: ${e.message}", e)
             }
-            Log.d("MonitoringService", "Service restarted after task removed")
-        } catch (e: Exception) {
-            Log.e("MonitoringService", "Failed to restart service on task removed: ${e.message}", e)
+        } else {
+            Log.d("MonitoringService", "Service restart skipped on task removed (monitoring disabled)")
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -164,11 +171,12 @@ class MonitoringService : Service() {
                     }
                     
                     // Check if app lock is globally enabled
-                    val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                    val prefs = getPrefs()
                     val isLockEnabled = prefs.getBoolean("flutter.app_lock_enabled", false)
                     
                     if (!isLockEnabled) {
                         // If lock is disabled, ensure we respect that
+                        clearPendingLock()
                         if (lastTriggered != null) {
                             hideOverlay()
                             lastTriggered = null
@@ -219,6 +227,31 @@ class MonitoringService : Service() {
         }
     }
 
+    private fun clearPendingLock() {
+        try {
+            val prefs = getPrefs()
+            prefs.edit().apply {
+                remove("flutter.show_lock_overlay_pending")
+                remove("flutter.locked_package_name")
+                remove("flutter.locked_app_name")
+                remove("flutter.locked_timestamp")
+                apply()
+            }
+        } catch (e: Exception) {
+            Log.e("MonitoringService", "Error clearing pending lock: ${e.message}", e)
+        }
+    }
+
+    private fun shouldRestart(): Boolean {
+        return try {
+            val prefs = getPrefs()
+            prefs.getBoolean("flutter.monitoring_enabled", false)
+        } catch (e: Exception) {
+            Log.e("MonitoringService", "Error reading monitoring flag: ${e.message}", e)
+            false
+        }
+    }
+
     private fun getForegroundApp(): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return null
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -263,7 +296,7 @@ class MonitoringService : Service() {
 
     private fun getLockedApps(): Set<String> {
         return try {
-            val prefs: SharedPreferences = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val prefs: SharedPreferences = getPrefs()
             val raw = prefs.getString("flutter.locked_apps_list", null) ?: return emptySet()
             val prefix = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu!"
             if (raw.startsWith(prefix)) {
@@ -285,7 +318,7 @@ class MonitoringService : Service() {
             
             // CRITICAL: Store pending lock in SharedPreferences BEFORE launching MainActivity
             // This ensures Flutter can read it even on cold start
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val prefs = getPrefs()
             prefs.edit().apply {
                 putBoolean("flutter.show_lock_overlay_pending", true)
                 putString("flutter.locked_package_name", packageName)
@@ -342,6 +375,11 @@ class MonitoringService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
+    }
+
+    private fun getPrefs(): SharedPreferences {
+        @Suppress("DEPRECATION")
+        return getSharedPreferences("FlutterSharedPreferences", Context.MODE_MULTI_PROCESS)
     }
 
 }
